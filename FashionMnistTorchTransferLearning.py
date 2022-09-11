@@ -9,18 +9,22 @@ from pathlib import Path
 from tqdm import tqdm
 import numpy as np
 
-n_epochs = 10
+n_epochs = 4
 
 class FashionResnet(torch.nn.Module):
     def __init__(self):
         super(FashionResnet, self).__init__()
         #model = torch.hub.load('facebookresearch/swav:main', 'resnet50')
+        self.unlock=False
         self.rn= models.resnet50(weights=models.ResNet50_Weights.DEFAULT)# pretrained=True,
         self.rn.fc = torch.nn.Linear(self.rn.fc.in_features,128)
         self.fc2 = torch.nn.Linear(self.rn.fc.out_features,10)
     def forward(self, x):
-        with torch.no_grad():
+        if self.unlock:
             x = self.rn(x)
+        else:
+            with torch.no_grad():
+                x = self.rn(x)
         x = self.fc2(x)
         return x
 
@@ -58,7 +62,10 @@ optimizer = torch.optim.Adam(frn.parameters(),lr=0.0001)
 best_loss=1e14
 training_loss_evolution=[]
 test_loss_evolution=[]
+frn.unlock=False
 for epoch in range(n_epochs):
+    if epoch>=n_epochs/2:
+        frn.unlock=True
     print(f"Epoch : {epoch}/{n_epochs}")
     losses=[]
     for i, batch in enumerate(tqdm(mnist_train_loader)) :
@@ -77,11 +84,9 @@ for epoch in range(n_epochs):
     # Validate
     for i, batch in enumerate(tqdm(mnist_test_loader)) :
         x,y=batch
-        y_pred = frn(x)
+        with torch.no_grad():
+            y_pred = frn(x)
         loss = torch.nn.functional.cross_entropy(y_pred,y)
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
         losses.append(loss.item())
 
     mean_loss = np.mean(np.array(losses))
@@ -101,7 +106,7 @@ plt.plot(test_loss_evolution,label="Testing loss")
 plt.title("Loss evolution")
 
 print("Testing")
-x,y=next(mnist_test_loader)
+x,y=next(iter(mnist_test_loader))
 print(f" {i} : {x.shape} {y.shape}")
 y_true = y.numpy()
 with torch.no_grad():
